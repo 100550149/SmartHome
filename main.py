@@ -5,6 +5,7 @@
 Variables: SMARTHOME_FILE (datos, por defecto datos_hub.json), SMARTHOME_PASSPHRASE.
 """
 import getpass
+import json
 import logging
 import os
 import sys
@@ -13,6 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import crypto_utils as cu
 from smarthome import App, Hub, HubError
 import smarthome
 
@@ -77,25 +79,61 @@ def menu():
         except (EOFError, KeyboardInterrupt):
             return
 
-"""def demo():
+def demo():
+    """Escenario automático. No pide datos y no deja datos_hub.json en el directorio de trabajo."""
     configurar_logs()
     with tempfile.TemporaryDirectory() as tmp:
-        hub = Hub(Path(tmp) / "datos.json", "passphrase-del-hub-demo")
-        dueño, invitado = App(hub), App(hub)
-        dueño.registrar("propietario", "Propietario#2026ok")
-        invitado.registrar("Invitado123", "Invitado#2026ok")
-        dueño.login("propietario", "Propietario#2026ok")
+        ruta = Path(tmp) / "datos.json"
+        hub = Hub(ruta, "passphrase-del-hub-demo")
+        dueno, invitado = App(hub), App(hub)
+        print(">>> Registro:", dueno.registrar("propietario", "Propietario#2026ok"),
+              "/", invitado.registrar("Invitado123", "Invitado#2026ok"))
+        dueno.login("propietario", "Propietario#2026ok")
         ahora = int(time.time())
-        auth = dueño.enviar("autorizar", invitado="Invitado123", puerta="principal",
+        auth = dueno.enviar("autorizar", invitado="Invitado123", puerta="principal",
                             inicio=ahora - 60, fin=ahora + 7200)
-        print("\n>>> Autorización firmada:", auth)
+        print(">>> Autorización firmada, id:", auth["id"])
         invitado.login("Invitado123", "Invitado#2026ok")
         print(">>> Invitado abre la puerta principal:", invitado.enviar("abrir", puerta="principal"))
         try:
             invitado.enviar("abrir", puerta="garaje")
         except HubError as exc:
             print(">>> Invitado intenta abrir el garaje:", exc)
-"""
+
+        invitado.enviar("cerrar", puerta="principal")
+        print(">>> Prueba negativa: firma alterada")
+        registro = hub.datos["autorizaciones"][0]
+        firma = bytearray(cu.unb64(registro["firma"]))
+        firma[0] ^= 0x01
+        registro["firma"] = cu.b64(bytes(firma))
+        try:
+            print(invitado.enviar("abrir", puerta="principal"))
+        except HubError as exc:
+            print(">>> Apertura rechazada:", exc, "| puerta principal:", hub.puertas["principal"])
+
+        print(">>> Prueba negativa: tag AES-GCM alterado")
+        clave = os.urandom(32)
+        blob = cu.encrypt(clave, b"orden-abrir-principal", b"aad-demo")
+        alterado = blob[:-1] + bytes([blob[-1] ^ 0x01])
+        try:
+            cu.decrypt(clave, alterado, b"aad-demo")
+        except cu.CryptoError as exc:
+            print(">>> Descifrado rechazado:", exc)
+
+        print(">>> Prueba negativa: HMAC del fichero (rol del invitado cambiado a propietario)")
+        obj = json.loads(ruta.read_text("utf-8"))
+        obj["datos"]["usuarios"]["Invitado123"]["rol"] = "propietario"
+        ruta.write_text(json.dumps(obj), encoding="utf-8")
+        try:
+            Hub(ruta, "passphrase-del-hub-demo")
+        except HubError as exc:
+            print(">>> Fichero rechazado:", exc)
+
 
 if __name__ == "__main__":
-    menu()
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        demo()
+    elif len(sys.argv) > 1:
+        sys.exit("Uso: python main.py [demo]")
+    else:
+        menu()

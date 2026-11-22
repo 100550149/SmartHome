@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Almacén generado al ejecutar la aplicación (sales, hashes, clave privada cifrada).
+datos_hub.json
+*.tmp

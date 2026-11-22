@@ -73,27 +73,42 @@ def verify_password(password: str, registro: dict) -> bool:
 
 
 def derive_key(password: str, salt: bytes) -> bytes:
-    """Clave AES-256 derivada de una contraseña (scrypt) con una sal dada."""
-    return _scrypt(salt).derive(password.encode())
+    """Clave de 256 bits derivada con Scrypt. Cada uso lleva su propia sal de 16 bytes."""
+    if not isinstance(password, str) or not isinstance(salt, (bytes, bytearray)) or len(salt) != SALT_LEN:
+        raise CryptoError("no se puede derivar la clave")
+    key = _scrypt(bytes(salt)).derive(password.encode())
+    # Longitud y parámetros, nunca la clave ni la sal.
+    log.debug("Derivación scrypt: clave de %d bits (n=%d, r=%d, p=%d, sal=%d bits)",
+              len(key) * 8, SCRYPT_N, SCRYPT_R, SCRYPT_P, SALT_LEN * 8)
+    return key
 
 
 # ------------------------------------------------------------- AES-GCM
+def _aes256(key: bytes) -> AESGCM:
+    """Solo AES-256. Otra longitud se rechaza: no se degrada a AES-128."""
+    if not isinstance(key, (bytes, bytearray)) or len(key) != KEY_LEN:
+        raise CryptoError("clave AES-256 inválida")
+    return AESGCM(bytes(key))
+
+
 def encrypt(key: bytes, plaintext: bytes, aad: bytes) -> bytes:
-    """Protege información pribada
+    """Protege información privada.
     AES-256-GCM. Devuelve nonce(12) + texto cifrado + tag."""
-    nonce = os.urandom(12)  # nonce nuevo y aleatorio en cada cifrado
-    blob = nonce + AESGCM(key).encrypt(nonce, plaintext, aad)
-    # Solo se muestran tamaños y el inicio del texto cifrado (es público); nunca clave ni texto en claro
+    cifrador = _aes256(key)
+    nonce = os.urandom(12)  # nonce nuevo y aleatorio en cada cifrado; 96 bits, tamaño propio de GCM
+    blob = nonce + cifrador.encrypt(nonce, plaintext, aad)
+    # Algoritmo y tamaños. Nunca la clave, el nonce ni el texto en claro.
     log.debug("AES-GCM %d bits cifrado: %d bytes -> %d bytes (nonce 96 bits + tag 128 bits)",
               len(key) * 8, len(plaintext), len(blob))
     return blob
 
 
 def decrypt(key: bytes, blob: bytes, aad: bytes) -> bytes:
+    cifrador = _aes256(key)
     if len(blob) < 12 + 16:
         raise CryptoError("mensaje demasiado corto")
     try:
-        plaintext = AESGCM(key).decrypt(blob[:12], blob[12:], aad)
+        plaintext = cifrador.decrypt(blob[:12], blob[12:], aad)
     except InvalidTag as exc:
         log.debug("AES-GCM descifrado FALLIDO: tag inválido (datos alterados o clave incorrecta)")
         raise CryptoError("tag GCM inválido: datos alterados o clave incorrecta") from exc
@@ -163,7 +178,10 @@ def verify_signature(public: bytes, data: bytes, signature: bytes) -> bool:
 def hmac_tag(key: bytes, data: bytes) -> bytes:
     h = hmac.HMAC(key, hashes.SHA256())
     h.update(data)
-    return h.finalize()
+    tag = h.finalize()
+    log.debug("HMAC-SHA256: etiqueta calculada, clave de %d bits, entrada de %d bytes",
+              len(key) * 8, len(data))
+    return tag
 
 
 def hmac_ok(key: bytes, data: bytes, tag: bytes) -> bool:
@@ -171,6 +189,8 @@ def hmac_ok(key: bytes, data: bytes, tag: bytes) -> bool:
     h.update(data)
     try:
         h.verify(tag)  # comparación en tiempo constante
-        return True
     except InvalidSignature:
+        log.debug("HMAC-SHA256: verificación FALLIDA, clave de %d bits", len(key) * 8)
         return False
+    log.debug("HMAC-SHA256: verificación correcta, clave de %d bits", len(key) * 8)
+    return True

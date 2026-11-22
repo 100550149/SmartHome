@@ -13,10 +13,28 @@ log = logging.getLogger("smarthome")
 
 PUERTAS = ("principal", "garaje", "trasera")
 MIN_PASSWORD = 8
+MAX_PASSWORD = 128
+MAX_USUARIO = 64
 MAX_FALLOS = 5
-#tiempos de bloquo en segundo en el caso de superar el max_fallos
+# Tras MAX_FALLOS intentos fallidos la cuenta queda bloqueada estos segundos.
 BLOQUEO_SEG = 60
 MAX_AUTORIZACION = 24 * 3600
+
+
+def _validar_usuario(usuario):
+    """Nombre usable como clave del registro: texto, sin vacíos ni caracteres de control."""
+    if not isinstance(usuario, str) or not usuario or usuario != usuario.strip():
+        raise HubError("usuario inválido")
+    if len(usuario) > MAX_USUARIO or any(ord(c) < 32 for c in usuario):
+        raise HubError("usuario inválido")
+
+
+def _validar_password(password):
+    """Reglas del registro. En el login el mensaje es otro, y es genérico."""
+    if not isinstance(password, str) or len(password) > MAX_PASSWORD:
+        raise HubError("contraseña inválida")
+    if len(password) < MIN_PASSWORD:
+        raise HubError(f"contraseña débil: mínimo {MIN_PASSWORD} caracteres")
 
 
 class HubError(Exception):
@@ -89,10 +107,8 @@ class Hub:
 
     # ------------------------------------------------- registro y login
     def registrar(self, usuario, password):
-        if not isinstance(password, str):
-            raise HubError("contraseña inválida")
-        if len(password) < MIN_PASSWORD:
-            raise HubError(f"contraseña débil: mínimo {MIN_PASSWORD} caracteres")
+        _validar_usuario(usuario)
+        _validar_password(password)
         # añadir nuevo usuario en en el base de datos
         usuarios = self.datos["usuarios"]
         if usuario in usuarios:
@@ -119,6 +135,11 @@ class Hub:
 
     def login(self, usuario, password):
         """Permite que un usuario acceda al sistema"""
+        _validar_usuario(usuario)
+        # Una contraseña que el registro nunca habría aceptado falla igual para todas las cuentas,
+        # sin gastar Scrypt y sin decir si el usuario existe.
+        if not isinstance(password, str) or not MIN_PASSWORD <= len(password) <= MAX_PASSWORD:
+            raise HubError("credenciales inválidas")
         ahora = self.reloj()
         #fallos: números de fallos accumulados
         #Hasta: hasta cuando se termina el bloqueo
