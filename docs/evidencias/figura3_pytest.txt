@@ -1,23 +1,10 @@
-============================= test session starts ==============================
-platform linux -- Python 3.12.3, pytest-9.2.0, pluggy-1.7.0 -- /tmp/smarthome-venv/bin/python
-cachedir: .pytest_cache
-rootdir: /workspace
-collecting ... collected 15 items
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
 
-tests/test_crypto.py::test_scrypt_parametros_sal_y_verificacion PASSED   [  6%]
-tests/test_crypto.py::test_aes_256_gcm_y_rechazo_de_tag PASSED           [ 13%]
-tests/test_crypto.py::test_hmac_sha256_acepta_y_rechaza PASSED           [ 20%]
-tests/test_crypto.py::test_ecdsa_p256_y_clave_privada_cifrada PASSED     [ 26%]
-tests/test_crypto.py::test_logs_indican_algoritmo_y_no_el_secreto PASSED [ 33%]
-tests/test_smarthome.py::test_registro_roles_password_y_usuario_invalido PASSED [ 40%]
-tests/test_smarthome.py::test_login_mensaje_generico_y_verificacion_aunque_no_exista PASSED [ 46%]
-tests/test_smarthome.py::test_bloqueo_de_cuenta_60_segundos PASSED       [ 53%]
-tests/test_smarthome.py::test_puertas_alarma_y_cierre_sin_autorizacion PASSED [ 60%]
-tests/test_smarthome.py::test_firma_alterada_caducada_y_revocada PASSED  [ 66%]
-tests/test_smarthome.py::test_replay_y_tag_alterado_no_ejecutan_la_orden PASSED [ 73%]
-tests/test_smarthome.py::test_fichero_hmac_permisos_y_secreto_fuera_del_disco PASSED [ 80%]
-tests/test_smarthome.py::test_la_firma_sigue_siendo_valida_tras_recargar PASSED [ 86%]
-tests/test_smarthome.py::test_el_invitado_no_escala_privilegios PASSED   [ 93%]
-tests/test_smarthome.py::test_demo_rechaza_firma_tag_y_hmac PASSED       [100%]
-
-============================== 15 passed in 3.61s ==============================
+Name              Stmts   Miss  Cover
+-------------------------------------
+crypto_utils.py     135      1    99%
+smarthome.py        411     33    92%
+-------------------------------------
+TOTAL               546     34    94%
+135 passed in 8.08s

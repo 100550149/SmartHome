@@ -10,3 +10,5 @@ htmlcov/
 # Almacén generado al ejecutar la aplicación (sales, hashes, clave privada cifrada).
 datos_hub.json
 *.tmp
+*.gen
+*.lock

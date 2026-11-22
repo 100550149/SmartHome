@@ -1,14 +1,17 @@
 crypto     scrypt n=16384 r=8 p=1, sal=128 bits
 crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
-crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 50 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 109 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 23 bytes
 crypto     scrypt n=16384 r=8 p=1, sal=128 bits
 crypto     Generando clave ECDSA P-256 (256 bits)
 crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
 crypto     AES-GCM 256 bits cifrado: 138 bytes -> 166 bytes (nonce 96 bits + tag 128 bits)
-crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 610 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 669 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 23 bytes
 smarthome  EVENTO REGISTRO propietario rol=propietario
 crypto     scrypt n=16384 r=8 p=1, sal=128 bits
-crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 738 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 797 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 23 bytes
 smarthome  EVENTO REGISTRO Invitado123 rol=invitado
 >>> Registro: propietario / invitado
 crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
@@ -19,11 +22,12 @@ crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bit
 crypto     AES-GCM 256 bits cifrado: 111 bytes -> 139 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 111 bytes, tag verificado
 crypto     Firma ECDSA P-256 con SHA-256
-crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 1028 bytes
-smarthome  EVENTO AUTORIZACION Invitado123 principal id=df4df1cf
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 1087 bytes
+crypto     HMAC-SHA256: etiqueta calculada, clave de 256 bits, entrada de 23 bytes
+smarthome  EVENTO AUTORIZACION Invitado123 principal id=31d8276f
 crypto     AES-GCM 256 bits cifrado: 193 bytes -> 221 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 193 bytes, tag verificado
->>> Autorización firmada, id: df4df1cfdc38ed61f4193d97ca7d95ae
+>>> Autorización firmada, id: 31d8276f86f98a753ba43fdfa1df5a38
 crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
 smarthome  EVENTO LOGIN_OK Invitado123
 crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
@@ -48,7 +52,7 @@ crypto     AES-GCM descifrado correcto: 61 bytes, tag verificado
 crypto     AES-GCM 256 bits cifrado: 45 bytes -> 73 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 45 bytes, tag verificado
 crypto     Verificación de firma: INVÁLIDA
-smarthome  EVENTO FIRMA_INVALIDA autorización df4df1cf rechazada
+smarthome  EVENTO FIRMA_INVALIDA autorización 31d8276f rechazada
 smarthome  EVENTO ACCESO_DENEGADO Invitado123 principal: sin autorización válida
 crypto     AES-GCM 256 bits cifrado: 38 bytes -> 66 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 38 bytes, tag verificado

@@ -164,3 +164,31 @@ Hecho después de cerrar esta auditoría. No se ha tocado el diseño que el apar
 - `docs/guia_defensa.md`: decisiones, límites (OWASP, bloqueo en memoria, mismo proceso) y preguntas de la oral.
 
 Comprobado en un venv nuevo: `pip install -r requirements.txt`, `python main.py demo` y `pytest -v`.
+
+## 6. Segunda revisión
+
+Relectura línea a línea de `crypto_utils.py`, `smarthome.py` y `main.py`, como examinador. Solo se ha cambiado lo que era un fallo real. Lo que ya estaba bien (AES-256-GCM, nonce aleatorio de 12 bytes, AAD con sentido + token + contador, Scrypt, ECDSA P-256, usuario ficticio, cierre de puerta sin autorización) no se ha rediseñado.
+
+| Problema | Gravedad | Corrección | Prueba |
+| --- | --- | --- | --- |
+| Un JSON antiguo sigue siendo auténtico: reponerlo deshace una revocación. | Alta | Contador de generación dentro del HMAC y fichero `.gen` aparte. Si el JSON es más viejo, no se carga. | `test_copia_antigua_no_deshace_la_revocacion` |
+| Un registro de autorización mal formado lanzaba `KeyError` y abortaba la búsqueda. | Media | Se salta ese registro y se sigue con los demás. | `test_registro_mal_formado_no_bloquea_otra_autorizacion` |
+| `ejecutar` con un mensaje que no es `bytes`, o demasiado corto, salía por `TypeError`. | Media | Se rechaza la orden y no se ejecuta nada. | `test_aad_ata_contador_token_y_sentido` |
+| En Windows `0o600` no quita permisos a otros usuarios. | Media | `icacls` deja el fichero solo al usuario actual. El test de permisos no asume POSIX. | `test_restringir_y_bloqueo_en_windows`, `test_rutas_con_espacios_y_permisos` |
+| Un corte a mitad de `json.dump` podía dejar el destino a medias, y dos procesos podían pisarse. | Media | Temporal, `fsync`, `os.replace`, y un candado (`flock` o `msvcrt`). | `test_guardados_concurrentes`, `test_fallo_de_escritura_no_deja_el_usuario_a_medias` |
+| Si fallaba el guardado, el usuario ya estaba en memoria. | Baja | Se deshace el alta y, si el JSON no llegó a sustituirse, también la generación. | `test_fallo_de_escritura_no_deja_el_usuario_a_medias` |
+| «José» y la misma letra en forma descompuesta eran dos cuentas y dos bloqueos. | Baja | El nombre se normaliza a NFC. Las mayúsculas siguen siendo otra cuenta: no es un bypass. | `test_nfc_une_la_cuenta_y_el_bloqueo`, `test_las_mayusculas_son_otra_cuenta` |
+| `canonico` aceptaba NaN y no fijaba la codificación. | Baja | `allow_nan=False`, `ensure_ascii=True`, UTF-8. La sal entra también en el HMAC. | `test_canonico_es_estable_y_rechaza_nan` |
+| Al cargar una clave no se exigía la curva P-256. | Baja | Privada y pública que no sean P-256 se rechazan. | `test_cada_byte_de_la_firma_y_curva_distinta` |
+| El menú no recortaba entradas y una opción rara no decía nada. La hora `99:99` petaba con un error de `datetime`. | Baja | Se recorta, se avisa, y la hora se valida antes. | `test_menu_rechaza_opcion_y_recorre_el_flujo`, `test_hora_invalida` |
+| Tras descifrar la privada, los bytes quedaban en un `bytes` sin borrarse. | Baja | Se copian a un `bytearray` y se ponen a cero. Python puede conservar otra copia; no se promete más. | Inspección de `Hub.login` (no hay aserción de la memoria del intérprete) |
+| Un fichero truncado, vacío o que es un directorio, o sin el `.gen`, salía por una traza. | Baja | `HubError` genérico, sin seguir. | `test_fichero_truncado_vacio_o_sin_directorio`, `test_directorio_o_generacion_ausente` |
+| `hmac_ok` y `decrypt` dejaban escapar `TypeError` si el tipo no era `bytes`. | Baja | Devuelven fallo o `CryptoError`, y no hay texto claro. | `test_tipos_invalidos_en_cifrado_y_hmac` |
+
+Revisado y no cambiado, porque no era un fallo:
+
+- El nonce aleatorio de 96 bits con clave de sesión nueva en cada login. El volumen no se acerca al límite de NIST SP 800-38D.
+- El AAD ya ata sentido, token y contador. La orden va dentro del texto autenticado, no hace falta repetirla en el AAD. La prueba `test_aad_ata_contador_token_y_sentido` lo comprueba.
+- El contador de órdenes vive en la sesión. Al cerrar el proceso muere la clave de sesión, así que reponer el fichero no reinyecta órdenes viejas. El rollback que sí importaba era el de las revocaciones.
+- «Ana» y «ana» son cuentas distintas. Bloquear una no abre la otra. Los espacios alrededor ya se rechazaban.
+- Cerrar una puerta sin autorización sigue siendo a propósito.

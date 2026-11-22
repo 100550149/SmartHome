@@ -39,6 +39,7 @@ Variables opcionales:
 
 ```bash
 pytest -v
+pytest -q --cov=crypto_utils --cov=smarthome --cov-report=term
 ```
 
 La batería cubre el funcionamiento normal y los rechazos: tag o ciphertext alterados, HMAC inválido, firma alterada, contraseña incorrecta, repetición de una orden, autorización caducada o revocada, bloqueo de cuenta y entradas mal formadas.
@@ -55,4 +56,6 @@ La batería cubre el funcionamiento normal y los rechazos: tag o ciphertext alte
 | `docs/guia_defensa.md` | Decisiones y preguntas de la defensa oral |
 | `docs/auditoria.md` | Comparación del código inicial con el enunciado |
 
-`datos_hub.json` y los temporales `*.tmp` están en `.gitignore`. Contienen sales, hashes y la clave privada cifrada. No deben versionarse.
+`datos_hub.json`, el contador `datos_hub.json.gen`, el candado `*.lock` y los temporales `*.tmp` están en `.gitignore`. Contienen sales, hashes y la clave privada cifrada. No deben versionarse.
+
+En Windows el modo `0600` no restringe la ACL. Al guardar, la aplicación llama a `icacls` para dejar cada fichero solo con el usuario actual. En Linux y macOS basta `chmod`. Las rutas van con `pathlib`, también si llevan espacios.

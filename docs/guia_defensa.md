@@ -248,3 +248,25 @@ Tres límites, en este orden, dan mejor impresión que esperar a que los encuent
 3. El cifrado del canal demuestra el formato del mensaje; no hay un socket.
 
 Y una frase de cierre: cuando un tag, un HMAC o una firma fallan, no hay texto claro, no se carga el fichero y no se abre la puerta.
+
+## Preguntas de la segunda revisión
+
+**Si copio un `datos_hub.json` de ayer, ¿vuelve una autorización revocada?** No, si el fichero `.gen` sigue en el valor nuevo. El JSON antiguo tiene un HMAC válido, pero su generación es menor y se rechaza con «copia antigua del fichero rechazada». Si copian los dos ficheros a la vez, la pareja es coherente y entra: no hay un contador fuera del disco. Hay que decir ese límite.
+
+**¿El nonce se reutiliza?** No a propósito. Cada `encrypt` pide 12 bytes a `os.urandom`. La clave de sesión cambia en cada login. No llevamos un registro eterno de nonces. GCM no avisa si, por azar, un nonce se repitiera.
+
+**¿La orden va en el AAD?** No. Va cifrada, y el tag la autentica. En el AAD van el sentido (`C` o `H`), el token y el contador, que viajan en claro y tienen que quedar atados al mensaje. Cambiar el contador de la cabecera sin rehacer el tag falla. Está en `test_aad_ata_contador_token_y_sentido`.
+
+**¿Por qué HMAC y no cifrar el JSON entero?** Porque los hashes y la clave pública no son secretos, y la privada ya va en AES-GCM. El HMAC cubre integridad. La sal entra en el cálculo, no solo en la derivación de la clave.
+
+**¿Qué pasa con José escrito de dos formas?** Se normaliza a NFC. Es la misma cuenta y el mismo bloqueo. «Ana» y «ana» no se pliegan: son dos cuentas. Bloquear una no entra en la otra.
+
+**En Windows, ¿basta el 0600?** No. Ese modo no toca la ACL. Se llama a `icacls /inheritance:r /grant:r USUARIO:(R,W)`. En POSIX se hace `chmod 0600`. Las pruebas de rutas usan `pathlib`, también con espacios.
+
+**¿Un registro de autorización roto tira el programa?** No. Se salta y se miran las demás. Si ninguna vale, la puerta no se abre.
+
+**¿Qué pasa si el disco se llena a mitad de un alta?** El temporal no sustituye al fichero bueno. El usuario no se queda a medias en memoria. Dos procesos no escriben a la vez: hay un candado, `flock` o `msvcrt`.
+
+**¿Habéis volteado solo el último byte?** No. Cada posición del mensaje GCM, del tag HMAC y de la firma. También mensajes truncados y tipos que no son `bytes`.
+
+**¿La cobertura?** `pytest-cov` sobre `crypto_utils.py` y `smarthome.py`. En la última ejecución de esta entrega, por encima del 90 % en los dos. La cifra exacta está en la figura de la memoria; no hace falta memorizarla si se sabe cómo se obtiene.

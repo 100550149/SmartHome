@@ -3,6 +3,8 @@ import logging
 import os
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 import crypto_utils as cu
 
@@ -122,3 +124,85 @@ def test_logs_indican_algoritmo_y_no_el_secreto(caplog):
     assert clave.hex() not in texto
     assert sal.hex() not in texto
     assert "texto-claro-SECRETO" not in texto
+
+
+def test_canonico_es_estable_y_rechaza_nan():
+    assert cu.canonico({"b": 1, "a": {"d": 2, "c": 3}}) == cu.canonico({"a": {"c": 3, "d": 2}, "b": 1})
+    assert cu.canonico({"nombre": "José"}) == b'{"nombre":"Jos\\u00e9"}'
+    with pytest.raises(cu.CryptoError):
+        cu.canonico({"x": float("nan")})
+    with pytest.raises(cu.CryptoError):
+        cu.canonico({"x": {1, 2}})
+
+
+_CLAVE_FIJA = bytes(range(32))
+_BLOB_FIJO = cu.encrypt(_CLAVE_FIJA, b"abcd", b"aad-fijo")
+_TAG_FIJO = cu.hmac_tag(_CLAVE_FIJA, b"datos-fijos")
+
+
+@pytest.mark.parametrize("posicion", range(len(_BLOB_FIJO)))
+def test_voltear_cualquier_byte_del_mensaje_gcm(posicion):
+    malo = bytearray(_BLOB_FIJO)
+    malo[posicion] ^= 0x01
+    with pytest.raises(cu.CryptoError):
+        cu.decrypt(_CLAVE_FIJA, bytes(malo), b"aad-fijo")
+
+
+@pytest.mark.parametrize("longitud", range(0, 12 + 16))
+def test_mensaje_gcm_truncado(longitud):
+    with pytest.raises(cu.CryptoError):
+        cu.decrypt(_CLAVE_FIJA, _BLOB_FIJO[:longitud], b"aad-fijo")
+
+
+@pytest.mark.parametrize("posicion", range(len(_TAG_FIJO)))
+def test_voltear_cualquier_byte_del_hmac(posicion):
+    malo = bytearray(_TAG_FIJO)
+    malo[posicion] ^= 0x01
+    assert cu.hmac_ok(_CLAVE_FIJA, b"datos-fijos", bytes(malo)) is False
+
+
+@pytest.mark.parametrize("valor", [None, "texto", 1, 1.5, [], {}])
+def test_tipos_invalidos_en_cifrado_y_hmac(valor):
+    with pytest.raises(cu.CryptoError):
+        cu.encrypt(_CLAVE_FIJA, valor, b"aad")
+    with pytest.raises(cu.CryptoError):
+        cu.encrypt(_CLAVE_FIJA, b"claro", valor)
+    with pytest.raises(cu.CryptoError):
+        cu.decrypt(_CLAVE_FIJA, valor, b"aad")
+    assert cu.hmac_ok(valor, b"datos", _TAG_FIJO) is False
+    assert cu.hmac_ok(_CLAVE_FIJA, b"datos", valor) is False
+    assert cu.verify_password(valor, {"salt": "AAAA", "hash": "AAAA"}) is False
+
+
+def test_cada_byte_de_la_firma_y_curva_distinta():
+    privada = cu.generate_signing_key()
+    publica = cu.public_bytes(privada)
+    datos = b"autorizacion-fija"
+    firma = cu.sign(privada, datos)
+    assert firma
+    for posicion in range(len(firma)):
+        mala = bytearray(firma)
+        mala[posicion] ^= 0x01
+        assert cu.verify_signature(publica, datos, bytes(mala)) is False
+    assert cu.verify_signature(publica, datos, b"") is False
+    assert cu.verify_signature(publica, datos, None) is False
+    otra = ec.generate_private_key(ec.SECP384R1())
+    cruda = otra.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    with pytest.raises(cu.CryptoError, match="P-256"):
+        cu.private_from_bytes(cruda)
+    publica_384 = otra.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    assert cu.verify_signature(publica_384, datos, firma) is False
+
+
+def test_clave_privada_ilegible():
+    with pytest.raises(cu.CryptoError, match="inválida"):
+        cu.private_from_bytes(b"esto-no-es-una-clave")
+
+
+def test_contrasena_no_codificable():
+    with pytest.raises(cu.CryptoError):
+        cu.hash_password("\ud800")
+    with pytest.raises(cu.CryptoError):
+        cu.derive_key(1234, os.urandom(16))

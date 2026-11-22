@@ -2,7 +2,7 @@
 crypto     AES-GCM 256 bits cifrado: 45 bytes -> 73 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 45 bytes, tag verificado
 crypto     Verificación de firma: INVÁLIDA
-smarthome  EVENTO FIRMA_INVALIDA autorización df4df1cf rechazada
+smarthome  EVENTO FIRMA_INVALIDA autorización 31d8276f rechazada
 smarthome  EVENTO ACCESO_DENEGADO Invitado123 principal: sin autorización válida
 crypto     AES-GCM 256 bits cifrado: 38 bytes -> 66 bytes (nonce 96 bits + tag 128 bits)
 crypto     AES-GCM descifrado correcto: 38 bytes, tag verificado

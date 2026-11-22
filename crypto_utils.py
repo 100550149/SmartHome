@@ -43,8 +43,18 @@ def unb64(text: str) -> bytes:
 
 
 def canonico(obj) -> bytes:
-    """JSON determinista: es lo que se firma / autentica."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+    """JSON determinista: claves ordenadas, UTF-8, sin NaN ni espacios.
+
+    El mismo objeto produce los mismos bytes aunque el diccionario se haya
+    construido en otro orden. Eso es lo que se firma y lo que entra en el HMAC.
+    """
+    try:
+        texto = json.dumps(
+            obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise CryptoError("datos no canónicos") from exc
+    return texto.encode("utf-8")
 
 
 # ------------------------------------------------------------ contraseñas
@@ -52,12 +62,21 @@ def _scrypt(salt: bytes) -> Scrypt:
     return Scrypt(salt=salt, length=KEY_LEN, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P)
 
 
+def _utf8(password: str) -> bytes:
+    if not isinstance(password, str):
+        raise CryptoError("contraseña no codificable")
+    try:
+        return password.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise CryptoError("contraseña no codificable") from exc
+
+
 def hash_password(password: str) -> dict:
     """Guarda sal + hash scrypt (nunca la contraseña)."""
     #genera un salt aleatoria de 16 byte
     salt = os.urandom(SALT_LEN)
     #calcula el resultado de Scrypt
-    digest = _scrypt(salt).derive(password.encode())
+    digest = _scrypt(salt).derive(_utf8(password))
     log.debug("scrypt n=%d r=%d p=%d, sal=%d bits", SCRYPT_N, SCRYPT_R, SCRYPT_P, SALT_LEN * 8)
     #Convierte los bytes a texto Base64 para almacenarlos
     return {"salt": b64(salt), "hash": b64(digest)}
@@ -66,7 +85,7 @@ def hash_password(password: str) -> dict:
 def verify_password(password: str, registro: dict) -> bool:
     """Verifica la contraseña introducida coincida con la que se registró"""
     try:
-        _scrypt(unb64(registro["salt"])).verify(password.encode(), unb64(registro["hash"]))
+        _scrypt(unb64(registro["salt"])).verify(_utf8(password), unb64(registro["hash"]))
         return True
     except (InvalidKey, KeyError, TypeError, ValueError, CryptoError):
         return False
@@ -74,9 +93,9 @@ def verify_password(password: str, registro: dict) -> bool:
 
 def derive_key(password: str, salt: bytes) -> bytes:
     """Clave de 256 bits derivada con Scrypt. Cada uso lleva su propia sal de 16 bytes."""
-    if not isinstance(password, str) or not isinstance(salt, (bytes, bytearray)) or len(salt) != SALT_LEN:
+    if not isinstance(salt, (bytes, bytearray)) or len(salt) != SALT_LEN:
         raise CryptoError("no se puede derivar la clave")
-    key = _scrypt(bytes(salt)).derive(password.encode())
+    key = _scrypt(bytes(salt)).derive(_utf8(password))
     # Longitud y parámetros, nunca la clave ni la sal.
     log.debug("Derivación scrypt: clave de %d bits (n=%d, r=%d, p=%d, sal=%d bits)",
               len(key) * 8, SCRYPT_N, SCRYPT_R, SCRYPT_P, SALT_LEN * 8)
@@ -91,10 +110,17 @@ def _aes256(key: bytes) -> AESGCM:
     return AESGCM(bytes(key))
 
 
+def _bytes(nombre: str, valor) -> bytes:
+    if not isinstance(valor, (bytes, bytearray)):
+        raise CryptoError(f"{nombre} inválido")
+    return bytes(valor)
+
+
 def encrypt(key: bytes, plaintext: bytes, aad: bytes) -> bytes:
     """Protege información privada.
     AES-256-GCM. Devuelve nonce(12) + texto cifrado + tag."""
     cifrador = _aes256(key)
+    plaintext, aad = _bytes("claro", plaintext), _bytes("aad", aad)
     nonce = os.urandom(12)  # nonce nuevo y aleatorio en cada cifrado; 96 bits, tamaño propio de GCM
     blob = nonce + cifrador.encrypt(nonce, plaintext, aad)
     # Algoritmo y tamaños. Nunca la clave, el nonce ni el texto en claro.
@@ -105,6 +131,7 @@ def encrypt(key: bytes, plaintext: bytes, aad: bytes) -> bytes:
 
 def decrypt(key: bytes, blob: bytes, aad: bytes) -> bytes:
     cifrador = _aes256(key)
+    blob, aad = _bytes("mensaje", blob), _bytes("aad", aad)
     if len(blob) < 12 + 16:
         raise CryptoError("mensaje demasiado corto")
     try:
@@ -139,8 +166,10 @@ def private_from_bytes(data: bytes):
         #intenta reconstruir la clave
         raise CryptoError("clave privada inválida") from exc
     #comprueba que realmente sea una clave de curva el'iptica
-    if not isinstance(key, ec.EllipticCurvePrivateKey):
-        raise CryptoError("tipo de clave inesperado")
+    if not isinstance(key, ec.EllipticCurvePrivateKey) or not isinstance(key.curve, ec.SECP256R1):
+        raise CryptoError("se esperaba ECDSA P-256")
+    if key.key_size != 256:
+        raise CryptoError("se esperaba ECDSA P-256")
     return key
 
 
@@ -165,6 +194,10 @@ def verify_signature(public: bytes, data: bytes, signature: bytes) -> bool:
     try:
         #Convierte los bytes recibidos en una clave pública
         pub = serialization.load_der_public_key(public)
+        if not isinstance(pub, ec.EllipticCurvePublicKey) or not isinstance(pub.curve, ec.SECP256R1):
+            raise InvalidSignature
+        if not isinstance(data, (bytes, bytearray)) or not isinstance(signature, (bytes, bytearray)):
+            raise InvalidSignature
         #comprueba si la firma corresponde exactamente a esos datos y a esa clave pública
         pub.verify(signature, data, ec.ECDSA(hashes.SHA256()))
         log.debug("Verificación de firma: válida")
@@ -176,6 +209,7 @@ def verify_signature(public: bytes, data: bytes, signature: bytes) -> bool:
 
 # ----------------------------------------------------------------- HMAC
 def hmac_tag(key: bytes, data: bytes) -> bytes:
+    key, data = _bytes("clave hmac", key), _bytes("datos hmac", data)
     h = hmac.HMAC(key, hashes.SHA256())
     h.update(data)
     tag = h.finalize()
@@ -185,12 +219,15 @@ def hmac_tag(key: bytes, data: bytes) -> bytes:
 
 
 def hmac_ok(key: bytes, data: bytes, tag: bytes) -> bool:
-    h = hmac.HMAC(key, hashes.SHA256())
-    h.update(data)
     try:
-        h.verify(tag)  # comparación en tiempo constante
-    except InvalidSignature:
-        log.debug("HMAC-SHA256: verificación FALLIDA, clave de %d bits", len(key) * 8)
+        key, data = _bytes("clave hmac", key), _bytes("datos hmac", data)
+        etiqueta = _bytes("etiqueta", tag)
+        h = hmac.HMAC(key, hashes.SHA256())
+        h.update(data)
+        h.verify(etiqueta)  # comparación en tiempo constante
+    except (InvalidSignature, CryptoError, ValueError, TypeError):
+        bits = len(key) * 8 if isinstance(key, (bytes, bytearray)) else 0
+        log.debug("HMAC-SHA256: verificación FALLIDA, clave de %d bits", bits)
         return False
     log.debug("HMAC-SHA256: verificación correcta, clave de %d bits", len(key) * 8)
     return True
