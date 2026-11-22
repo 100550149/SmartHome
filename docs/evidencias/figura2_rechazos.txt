@@ -1,0 +1,18 @@
+>>> Prueba negativa: firma alterada
+crypto     AES-GCM 256 bits cifrado: 45 bytes -> 73 bytes (nonce 96 bits + tag 128 bits)
+crypto     AES-GCM descifrado correcto: 45 bytes, tag verificado
+crypto     Verificación de firma: INVÁLIDA
+smarthome  EVENTO FIRMA_INVALIDA autorización 31d8276f rechazada
+smarthome  EVENTO ACCESO_DENEGADO Invitado123 principal: sin autorización válida
+crypto     AES-GCM 256 bits cifrado: 38 bytes -> 66 bytes (nonce 96 bits + tag 128 bits)
+crypto     AES-GCM descifrado correcto: 38 bytes, tag verificado
+>>> Apertura rechazada: acceso denegado | puerta principal: cerrada
+>>> Prueba negativa: tag AES-GCM alterado
+crypto     AES-GCM 256 bits cifrado: 21 bytes -> 49 bytes (nonce 96 bits + tag 128 bits)
+crypto     AES-GCM descifrado FALLIDO: tag inválido (datos alterados o clave incorrecta)
+>>> Descifrado rechazado: tag GCM inválido: datos alterados o clave incorrecta
+>>> Prueba negativa: HMAC del fichero (rol del invitado cambiado a propietario)
+crypto     scrypt n=16384 r=8 p=1, sal=128 bits
+crypto     Derivación scrypt: clave de 256 bits (n=16384, r=8, p=1, sal=128 bits)
+crypto     HMAC-SHA256: verificación FALLIDA, clave de 256 bits
+>>> Fichero rechazado: datos alterados o passphrase incorrecta (HMAC inválido)

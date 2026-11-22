@@ -5,6 +5,7 @@
 Variables: SMARTHOME_FILE (datos, por defecto datos_hub.json), SMARTHOME_PASSPHRASE.
 """
 import getpass
+import json
 import logging
 import os
 import sys
@@ -13,14 +14,26 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import crypto_utils as cu
 from smarthome import App, Hub, HubError
 import smarthome
 
 
 def hora_a_timestamp(texto):
     """'16:00' -> timestamp de hoy a esa hora."""
-    h, m = (int(x) for x in texto.strip().split(":"))
-    return int(datetime.now().replace(hour=h, minute=m, second=0, microsecond=0).timestamp())
+    if not isinstance(texto, str):
+        raise ValueError("hora inválida")
+    partes = texto.strip().split(":")
+    if len(partes) != 2 or not all(parte.isdigit() for parte in partes):
+        raise ValueError("hora inválida")
+    hora, minuto = int(partes[0]), int(partes[1])
+    if not (0 <= hora <= 23 and 0 <= minuto <= 59):
+        raise ValueError("hora inválida")
+    return int(datetime.now().replace(hour=hora, minute=minuto, second=0, microsecond=0).timestamp())
+
+
+def _campo(prompt):
+    return input(prompt).strip()
 
 def configurar_logs():
     """Muestra en pantalla los eventos y los detalles criptográficos (algoritmo, tamaños, resultado)."""
@@ -39,13 +52,16 @@ def menu():
     while True:
         try:
             if rol is None:
-                op = input("\n[1] Registrar  [2] Login  [0] Salir > ").strip()
+                op = _campo("\n[1] Registrar  [2] Login  [0] Salir > ")
                 if op == "0":
                     return
-                usuario, pw = input("Usuario: "), getpass.getpass("Contraseña: ")
+                if op not in ("1", "2"):
+                    print("Error: opción desconocida")
+                    continue
+                usuario, pw = _campo("Usuario: "), getpass.getpass("Contraseña: ")
                 if op == "1":
                     print("Registrado como", app.registrar(usuario, pw))
-                elif op == "2":
+                else:
                     app.login(usuario, pw)
                     rol = hub.sesiones[app.token]["rol"]
                     print("Sesión iniciada como", rol)
@@ -53,49 +69,87 @@ def menu():
             texto = "[1] Estado [2] Abrir [3] Cerrar [4] Salir de la sesión"
             if rol == "propietario":
                 texto += "\n[5] Alarma [6] Autorizar invitado [7] Revocar [8] Eventos"
-            op = input(f"\n{texto}\n> ").strip()
+            op = _campo(f"\n{texto}\n> ")
             if op == "1":
                 print(app.enviar("estado"))
             elif op in ("2", "3"):
-                print(app.enviar("abrir" if op == "2" else "cerrar", puerta=input(f"Puerta {smarthome.PUERTAS}: ")))
+                print(app.enviar("abrir" if op == "2" else "cerrar", puerta=_campo(f"Puerta {smarthome.PUERTAS}: ")))
             elif op == "4":
                 app.enviar("logout")
                 rol = None
             elif op == "5" and rol == "propietario":
-                print(app.enviar("alarma", estado=input("on/off: ")))
+                print(app.enviar("alarma", estado=_campo("on/off: ").lower()))
             elif op == "6" and rol == "propietario":
-                datos = app.enviar("autorizar", invitado=input("Invitado: "), puerta=input("Puerta: "),
-                                   inicio=hora_a_timestamp(input("Inicio HH:MM (hoy): ")),
-                                   fin=hora_a_timestamp(input("Fin HH:MM (hoy): ")))
+                datos = app.enviar("autorizar", invitado=_campo("Invitado: "), puerta=_campo("Puerta: "),
+                                   inicio=hora_a_timestamp(_campo("Inicio HH:MM (hoy): ")),
+                                   fin=hora_a_timestamp(_campo("Fin HH:MM (hoy): ")))
                 print("Autorización firmada, id:", datos["id"])
             elif op == "7" and rol == "propietario":
-                print(app.enviar("revocar", id=input("Id: ")))
+                print(app.enviar("revocar", id=_campo("Id: ")))
             elif op == "8" and rol == "propietario":
                 print(*app.enviar("eventos")["eventos"], sep="\n")
+            else:
+                print("Error: opción desconocida")
         except (HubError, ValueError) as exc:
             print("Error:", exc)
         except (EOFError, KeyboardInterrupt):
             return
 
-"""def demo():
+def demo():
+    """Escenario automático. No pide datos y no deja datos_hub.json en el directorio de trabajo."""
     configurar_logs()
     with tempfile.TemporaryDirectory() as tmp:
-        hub = Hub(Path(tmp) / "datos.json", "passphrase-del-hub-demo")
-        dueño, invitado = App(hub), App(hub)
-        dueño.registrar("propietario", "Propietario#2026ok")
-        invitado.registrar("Invitado123", "Invitado#2026ok")
-        dueño.login("propietario", "Propietario#2026ok")
+        ruta = Path(tmp) / "datos.json"
+        hub = Hub(ruta, "passphrase-del-hub-demo")
+        dueno, invitado = App(hub), App(hub)
+        print(">>> Registro:", dueno.registrar("propietario", "Propietario#2026ok"),
+              "/", invitado.registrar("Invitado123", "Invitado#2026ok"))
+        dueno.login("propietario", "Propietario#2026ok")
         ahora = int(time.time())
-        auth = dueño.enviar("autorizar", invitado="Invitado123", puerta="principal",
+        auth = dueno.enviar("autorizar", invitado="Invitado123", puerta="principal",
                             inicio=ahora - 60, fin=ahora + 7200)
-        print("\n>>> Autorización firmada:", auth)
+        print(">>> Autorización firmada, id:", auth["id"])
         invitado.login("Invitado123", "Invitado#2026ok")
         print(">>> Invitado abre la puerta principal:", invitado.enviar("abrir", puerta="principal"))
         try:
             invitado.enviar("abrir", puerta="garaje")
         except HubError as exc:
             print(">>> Invitado intenta abrir el garaje:", exc)
-"""
+
+        invitado.enviar("cerrar", puerta="principal")
+        print(">>> Prueba negativa: firma alterada")
+        registro = hub.datos["autorizaciones"][0]
+        firma = bytearray(cu.unb64(registro["firma"]))
+        firma[0] ^= 0x01
+        registro["firma"] = cu.b64(bytes(firma))
+        try:
+            print(invitado.enviar("abrir", puerta="principal"))
+        except HubError as exc:
+            print(">>> Apertura rechazada:", exc, "| puerta principal:", hub.puertas["principal"])
+
+        print(">>> Prueba negativa: tag AES-GCM alterado")
+        clave = os.urandom(32)
+        blob = cu.encrypt(clave, b"orden-abrir-principal", b"aad-demo")
+        alterado = blob[:-1] + bytes([blob[-1] ^ 0x01])
+        try:
+            cu.decrypt(clave, alterado, b"aad-demo")
+        except cu.CryptoError as exc:
+            print(">>> Descifrado rechazado:", exc)
+
+        print(">>> Prueba negativa: HMAC del fichero (rol del invitado cambiado a propietario)")
+        obj = json.loads(ruta.read_text("utf-8"))
+        obj["datos"]["usuarios"]["Invitado123"]["rol"] = "propietario"
+        ruta.write_text(json.dumps(obj), encoding="utf-8")
+        try:
+            Hub(ruta, "passphrase-del-hub-demo")
+        except HubError as exc:
+            print(">>> Fichero rechazado:", exc)
+
 
 if __name__ == "__main__":
-    menu()
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        demo()
+    elif len(sys.argv) > 1:
+        sys.exit("Uso: python main.py [demo]")
+    else:
+        menu()
